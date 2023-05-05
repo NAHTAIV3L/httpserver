@@ -8,6 +8,8 @@
 #include <string.h>
 #include <unistd.h>
 
+#define BUFFERSIZE 4096
+
 int sfd;
 int cfd;
 
@@ -45,39 +47,35 @@ sigaction(SIGINT, &sigIntHandler, NULL);
 sigaction(SIGSEGV, &sigSegfaultHandler, NULL);
 }
 
+
 int gethandler(int cfd, char *filepath, char *msg)
 {
-    char *part1 = strtok(msg, " ");
     char *path = strtok(NULL, " ");
-    char *part3 = strtok(NULL, "\n");
+    char *protocol = strtok(NULL, "\n");
     char *file = NULL;
 
-    int pathlength = strlen(path) + strlen(filepath);
-
+    //calculate length of the file path
+    int pathlength = strlen(path) + strlen(filepath) + 1;
     if (path[strlen(path)-1] == '/')
-    {
         pathlength += strlen("index.html");
-    }
 
-    pathlength += 10;
+    //allocate memory for the file path
     file = malloc(pathlength);
     if (!file)
     { perror("!malloc"); return -1; }
 
-
+    //combine path into one string
     if (path[strlen(path)-1] == '/')
-    {
-        snprintf(file, pathlength, "%s%sindex.html%c", filepath, path, 0);
-    }
+        snprintf(file, pathlength, "%s%sindex.html", filepath, path);
     else
-    {
-        snprintf(file, pathlength, "%s%s%c", filepath, path, 0);
-    }
+        snprintf(file, pathlength, "%s%s", filepath, path);
 
+    //read full file requested into a buffer
     puts(file);
-    char * buffer = 0;
+    char *buffer = 0;
     long length;
-    FILE * f = fopen(file, "r");
+    FILE *f = fopen(file, "r");
+    char tosend[BUFFERSIZE];
 
     if (f)
     {
@@ -93,21 +91,43 @@ int gethandler(int cfd, char *filepath, char *msg)
     }
     else
     {
-        char tosend[4096];
-        snprintf(tosend, 4096, "%s 404 Not Found%c", part3, 0);
+        snprintf(tosend, BUFFERSIZE, "%s 404 Not Found%c", protocol, 0);
         send(cfd, tosend, strlen(tosend), 0);
         perror(file);
+        free(file);
         return 0;
     }
 
+    //get mime type
+    char* filetype = file + pathlength;
+    while (*filetype != '.')
+        filetype--;
+    filetype++;
+    size_t l = 0;
+    char* mimebuf;
+    char* mimetype;
+    ssize_t linelen = 0;
+    FILE *mime = fopen("text.mime", "r");
+    if (!mime) { perror("text.mime"); return 0; }
+    while ((getline((char**)&mimebuf, &l, mime)) != -1)
+    {
+        if (!strncmp(mimebuf, filetype, strlen(filetype)))
+        {
+            mimetype = mimebuf + strlen(filetype) + 1;
+            break;
+        }
+    }
+    mimetype[strlen(mimetype) - 1] = 0;
+
+    //send reply to get request
     if (buffer)
     {
-        // start to process your data / extract strings here...
-        char tosend[4096];
-        snprintf(tosend, 4096, "%s 200 OK\nContent-Type: text/html\nContent-Length: %d\n\n%s%c", part3, (int)length, buffer, 0);
+        snprintf(tosend, BUFFERSIZE, "%s 200 OK\nContent-Type: %s\nContent-Length: %d\n\n%s%c", protocol, mimetype, (int)length, buffer, 0);
         send(cfd, tosend, strlen(tosend), 0);
     }
-    else { return -1; }
+    else { free(mimebuf); free(file); return -1; }
+
+    free(mimebuf);
     free(file);
     return 0;
 }
@@ -115,7 +135,9 @@ int gethandler(int cfd, char *filepath, char *msg)
 int main(int argc, char **argv)
 {
     SignalInit();
-    char filepath[1024];
+    char filepath[BUFFERSIZE];
+    char msg[BUFFERSIZE];
+
     if (argc > 1)
     {
         strncpy(filepath, argv[1], strlen(argv[1]));
@@ -127,7 +149,7 @@ int main(int argc, char **argv)
 
     struct sockaddr_in serverinfo = {0};
     serverinfo.sin_family = AF_INET;
-    serverinfo.sin_port = htons(3000);
+    serverinfo.sin_port = htons(3001);
     socklen_t serverinfolen = sizeof(serverinfo);
 
     struct sockaddr clientinfo = {0};
@@ -137,45 +159,33 @@ int main(int argc, char **argv)
     if (sfd < 0) { perror("!socket"); return -1; }
 
     if (0 > bind(sfd, (struct sockaddr*)&serverinfo, serverinfolen))
-    {
-        perror("!bind");
-        return -1;
-    }
+    { perror("!bind"); return -1; }
 
     while (1)
     {
         if (0 > listen(sfd, 0))
-        {
-            perror("!listen");
-            return -1;
+        {perror("!listen"); return -1;
         }
 
         cfd = accept(sfd, &clientinfo, &clientinfolen);
         if (0 > cfd) { perror("!accept"); return -1; }
 
-        char msg[4096];
-        recv(cfd, msg, 4096-1, 0);
+        recv(cfd, msg, BUFFERSIZE-1, 0);
 
-        char temp[4096];
-        strncpy(temp, msg, 4096);
+        char *request = strtok(msg, " ");
 
-        for (int i = 0; i < 4096; i++)
+        if (strcmp(request, "GET") == 0)
         {
-            if (msg[i] == ' ')
-            { msg[i] = 0; break; }
-        }
-
-        if (strcmp(msg, "GET") == 0)
-        {
-            if (0 > gethandler(cfd, filepath, temp))
+            if (0 > gethandler(cfd, filepath, msg + strlen(request) + 1))
             { perror("!gethandler"); }
         }
-        else if (strcmp(msg, "POST") == 0)
+        else if (strcmp(request, "POST") == 0)
         {}
-        else if (strcmp(msg, "HEAD") == 0)
+        else if (strcmp(request, "HEAD") == 0)
         {}
 
         close(cfd);
+        memset(msg, 0, 4096);
     }
     close(sfd);
     return 0;
