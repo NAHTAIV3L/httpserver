@@ -13,20 +13,16 @@ int cfd;
 
 void mysighandler()
 {
-    if (cfd >= 0)
-        close(cfd);
-    if (sfd >= 0)
-        close(sfd);
+    close(cfd);
+    close(sfd);
     puts("");
-    exit(1);
+    exit(0);
 }
 
 void mysegfaulthandler()
 {
-    if (cfd >= 0)
-        close(cfd);
-    if (sfd >= 0)
-        close(sfd);
+    close(cfd);
+    close(sfd);
     puts("segfault");
     abort();
 }
@@ -34,13 +30,15 @@ void mysegfaulthandler()
 void SignalInit()
 {
 struct sigaction sigIntHandler;
-sigIntHandler.sa_handler = mysighandler;
-sigemptyset(&sigIntHandler.sa_mask);
-sigIntHandler.sa_flags = 0;
-
 struct sigaction sigSegfaultHandler;
+
+sigIntHandler.sa_handler = mysighandler;
 sigSegfaultHandler.sa_handler = mysegfaulthandler;
+
+sigemptyset(&sigIntHandler.sa_mask);
 sigemptyset(&sigSegfaultHandler.sa_mask);
+
+sigIntHandler.sa_flags = 0;
 sigSegfaultHandler.sa_flags = 0;
 
 sigaction(SIGINT, &sigIntHandler, NULL);
@@ -76,7 +74,7 @@ int gethandler(int cfd, char *filepath, char *msg)
         snprintf(file, pathlength, "%s%s%c", filepath, path, 0);
     }
 
-    perror((const char *)file);
+    puts(file);
     char * buffer = 0;
     long length;
     FILE * f = fopen(file, "r");
@@ -96,18 +94,18 @@ int gethandler(int cfd, char *filepath, char *msg)
     else
     {
         char tosend[4096];
-        snprintf(tosend, 4096, "%s 404 Not Found", part3);
-        send(cfd, tosend, 4096-1, 0);
-        perror("!file not found");
-        return -1;
+        snprintf(tosend, 4096, "%s 404 Not Found%c", part3, 0);
+        send(cfd, tosend, strlen(tosend), 0);
+        perror(file);
+        return 0;
     }
 
     if (buffer)
     {
         // start to process your data / extract strings here...
         char tosend[4096];
-        snprintf(tosend, 4096, "%s 200 OK\nContent-Type: text/html\nContent-Length: %d\n\n%s", part3, (int)length, buffer);
-        send(cfd, tosend, 4096-1, 0);
+        snprintf(tosend, 4096, "%s 200 OK\nContent-Type: text/html\nContent-Length: %d\n\n%s%c", part3, (int)length, buffer, 0);
+        send(cfd, tosend, strlen(tosend), 0);
     }
     else { return -1; }
     free(file);
