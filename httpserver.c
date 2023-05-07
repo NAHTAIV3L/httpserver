@@ -9,9 +9,11 @@
 #include <unistd.h>
 
 #define BUFFERSIZE 4096
+#define PORT 3001
 
 int sfd;
 int cfd;
+char redirect[BUFFERSIZE];
 
 void mysighandler()
 {
@@ -47,12 +49,28 @@ sigaction(SIGINT, &sigIntHandler, NULL);
 sigaction(SIGSEGV, &sigSegfaultHandler, NULL);
 }
 
+int ishtml(char* str)
+{
+    if (strlen(str) != 4)
+        return 0;
+    if (strcmp(str, "html"))
+        return 0;
+    return 1;
+}
 
 int gethandler(int cfd, char *filepath, char *msg)
 {
     char *path = strtok(NULL, " ");
     char *protocol = strtok(NULL, "\n");
     char *file = NULL;
+    int ret = 0;
+
+    int protnum;
+
+    if (protocol[strlen(protocol)] == '0')
+        protnum = 0;
+    else
+        protnum = 1;
 
     //calculate length of the file path
     int pathlength = strlen(path) + strlen(filepath) + 1;
@@ -91,7 +109,7 @@ int gethandler(int cfd, char *filepath, char *msg)
     }
     else
     {
-        snprintf(tosend, BUFFERSIZE, "%s 404 Not Found%c", protocol, 0);
+        snprintf(tosend, BUFFERSIZE, "HTTP/1.%d 404 Not Found", protnum);
         send(cfd, tosend, strlen(tosend), 0);
         perror(file);
         free(file);
@@ -104,9 +122,8 @@ int gethandler(int cfd, char *filepath, char *msg)
         filetype--;
     filetype++;
     size_t l = 0;
-    char* mimebuf;
-    char* mimetype;
-    ssize_t linelen = 0;
+    char* mimebuf = 0;
+    char* mimetype = 0;
     FILE *mime = fopen("text.mime", "r");
     if (!mime) { perror("text.mime"); return 0; }
     while ((getline((char**)&mimebuf, &l, mime)) != -1)
@@ -122,13 +139,20 @@ int gethandler(int cfd, char *filepath, char *msg)
     //send reply to get request
     if (buffer)
     {
-        snprintf(tosend, BUFFERSIZE, "%s 200 OK\nContent-Type: %s\nContent-Length: %d\n\n%s%c", protocol, mimetype, (int)length, buffer, 0);
+        snprintf(tosend, BUFFERSIZE, "HTTP/1.%d 200 OK\nContent-Type: %s\nContent-Length: %d\n\n%s%c", protnum, mimetype, (int)length, buffer, 0);
+        if (ishtml(filetype))
+            sprintf(redirect, "HTTP/1.%d 301 Moved Permanently\nLocation: %s", protnum, path);
         send(cfd, tosend, strlen(tosend), 0);
     }
-    else { free(mimebuf); free(file); return -1; }
-
+    else { ret = -1; }
     free(mimebuf);
     free(file);
+    return ret;
+}
+
+int posthandler(int cfd, char* filepath, char* msg)
+{
+    send(cfd, redirect, strlen(redirect), 0);
     return 0;
 }
 
@@ -149,7 +173,7 @@ int main(int argc, char **argv)
 
     struct sockaddr_in serverinfo = {0};
     serverinfo.sin_family = AF_INET;
-    serverinfo.sin_port = htons(3001);
+    serverinfo.sin_port = htons(PORT);
     socklen_t serverinfolen = sizeof(serverinfo);
 
     struct sockaddr clientinfo = {0};
@@ -164,8 +188,7 @@ int main(int argc, char **argv)
     while (1)
     {
         if (0 > listen(sfd, 0))
-        {perror("!listen"); return -1;
-        }
+        { perror("!listen"); return -1; }
 
         cfd = accept(sfd, &clientinfo, &clientinfolen);
         if (0 > cfd) { perror("!accept"); return -1; }
@@ -180,7 +203,10 @@ int main(int argc, char **argv)
             { perror("!gethandler"); }
         }
         else if (strcmp(request, "POST") == 0)
-        {}
+        {
+            if (0 > posthandler(cfd, filepath, msg + strlen(request) + 1))
+            { perror("!posthandler"); }
+        }
         else if (strcmp(request, "HEAD") == 0)
         {}
 

@@ -8,9 +8,8 @@ csv text/csv
 csv-schema text/csv-schema
 directory - DEPRECATED by RFC6350 text/directory
 dns text/dns
-ecmascript (OBSOLETED in favor of text/javascript) text/ecmascript
+ecmascript text/ecmascript
 encaprtp text/encaprtp
-enriched 
 example text/example
 fhirpath text/fhirpath
 flexfec text/flexfec
@@ -21,12 +20,11 @@ hl7v2 text/hl7v2
 html text/html
 js text/javascript
 jcr-cnd text/jcr-cnd
-markdown text/markdown
+md text/markdown
 mizar text/mizar
 n3 text/n3
 parameters text/parameters
 parityfec text/parityfec
-plain 
 provenance-notation text/provenance-notation
 prs.fallenstein.rst text/prs.fallenstein.rst
 prs.lines.tag text/prs.lines.tag
@@ -34,7 +32,6 @@ prs.prop.logic text/prs.prop.logic
 raptorfec text/raptorfec
 RED text/RED
 rfc822-headers text/rfc822-headers
-richtext 
 rtf text/rtf
 rtp-enc-aescm128 text/rtp-enc-aescm128
 rtploopback text/rtploopback
